@@ -11,9 +11,6 @@ Tests mock data generation functionality including:
 Uses pytest tmpdir fixture for isolated file operations.
 """
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 

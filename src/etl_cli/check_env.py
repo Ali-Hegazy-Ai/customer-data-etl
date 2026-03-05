@@ -91,9 +91,7 @@ def check_odbc_drivers() -> bool:
             return True
         else:
             typer.echo("  ⚠️  No ODBC drivers installed")
-            typer.echo(
-                "  This is OK for development. For production, install msodbcsql18."
-            )
+            typer.echo("  This is OK for development. For production, install msodbcsql18.")
             return True
     except ImportError:
         typer.echo("\n⚠️  pyodbc not installed. Install to check ODBC drivers.")
@@ -181,12 +179,8 @@ def check_database_connectivity() -> bool:
 
 @app.callback(invoke_without_command=True)
 def check_env(
-    verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Show detailed output"
-    ),
-    check_db: bool = typer.Option(
-        True, "--skip-db", help="Skip database connectivity check"
-    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
+    check_db: bool = typer.Option(True, "--skip-db", help="Skip database connectivity check"),
 ) -> None:
     """
     Diagnose the runtime environment.

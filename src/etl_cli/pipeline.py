@@ -68,7 +68,7 @@ def extract() -> bool:
     if sales_file.exists():
         typer.echo(f"  ✓ Found {sales_file}")
     elif Path("data/raw/sales_data.csv").exists():
-        typer.echo(f"  ✓ Found data/raw/sales_data.csv")
+        typer.echo("  ✓ Found data/raw/sales_data.csv")
     else:
         typer.echo("  - Sales data not found (optional)", err=True)
 
@@ -116,9 +116,7 @@ def load() -> bool:
         # Placeholder for load logic
         typer.echo("  • Would write to data/clean/customer_dim.csv (placeholder)")
         typer.echo("  • Would write to data/clean/transaction_fact.csv (placeholder)")
-        typer.echo(
-            "  • Would insert into warehouse_db.dbo.customers (placeholder)"
-        )
+        typer.echo("  • Would insert into warehouse_db.dbo.customers (placeholder)")
 
         typer.echo("  ✓ Load complete")
         return True
@@ -165,9 +163,7 @@ def run_pipeline(
         "--skip-validate",
         help="Skip validation phase",
     ),
-    limit: int = typer.Option(
-        None, "--limit", help="Limit rows processed (for testing)"
-    ),
+    limit: int = typer.Option(None, "--limit", help="Limit rows processed (for testing)"),
 ) -> None:
     """
     Run the complete ETL pipeline.

@@ -33,8 +33,7 @@ try:
     import typer
 except ImportError:
     print(
-        "Error: typer is not installed. "
-        "Install with: pip install typer[all]",
+        "Error: typer is not installed. " "Install with: pip install typer[all]",
         file=sys.stderr,
     )
     sys.exit(3)
@@ -52,12 +51,8 @@ app = typer.Typer(
 
 # Register sub-apps
 app.add_typer(setup_app, name="setup", help="Initialize workspace and environment")
-app.add_typer(
-    check_env_app, name="check-env", help="Check environment and dependencies"
-)
-app.add_typer(
-    generate_mock_app, name="generate-mock-data", help="Generate mock customer data"
-)
+app.add_typer(check_env_app, name="check-env", help="Check environment and dependencies")
+app.add_typer(generate_mock_app, name="generate-mock-data", help="Generate mock customer data")
 app.add_typer(pipeline_app, name="run-pipeline", help="Execute the ETL pipeline")
 
 

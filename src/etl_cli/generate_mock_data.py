@@ -29,9 +29,9 @@ import sys
 from pathlib import Path
 
 try:
-    import typer
-    import pandas as pd
     import numpy as np
+    import pandas as pd
+    import typer
 except ImportError as e:
     print(
         f"Error: Required package not found: {e}",
@@ -60,24 +60,37 @@ def generate_crm_data(num_rows: int, seed: int) -> pd.DataFrame:
     np.random.seed(seed)
 
     first_names = [
-        "أحمد", "محمد", "علي", "فاطمة", "عائشة",
-        "John", "Jane", "Bob", "Alice", "Charlie",
+        "أحمد",
+        "محمد",
+        "علي",
+        "فاطمة",
+        "عائشة",
+        "John",
+        "Jane",
+        "Bob",
+        "Alice",
+        "Charlie",
     ]
     last_names = [
-        "محمود", "علي", "حسن", "عمر", "فرج",
-        "Smith", "Johnson", "Williams", "Brown", "Jones",
+        "محمود",
+        "علي",
+        "حسن",
+        "عمر",
+        "فرج",
+        "Smith",
+        "Johnson",
+        "Williams",
+        "Brown",
+        "Jones",
     ]
     countries = ["SA", "AE", "EG", "US", "UK", "DE", "FR"]
 
     data = {
         "customer_id": range(1, num_rows + 1),
         "name": [
-            f"{random.choice(first_names)} {random.choice(last_names)}"
-            for _ in range(num_rows)
+            f"{random.choice(first_names)} {random.choice(last_names)}" for _ in range(num_rows)
         ],
-        "email": [
-            f"customer{i}@example.com" for i in range(1, num_rows + 1)
-        ],
+        "email": [f"customer{i}@example.com" for i in range(1, num_rows + 1)],
         "phone": [
             f"+{random.randint(1, 99)}{random.randint(100000000, 999999999)}"
             for _ in range(num_rows)
@@ -110,16 +123,11 @@ def generate_sales_data(num_rows: int, seed: int, num_customers: int) -> pd.Data
     random.seed(seed + 1)
     np.random.seed(seed + 1)
 
-    products = [
-        "Product A", "Product B", "Product C", "Service X", "Service Y", "Bundle Pack"
-    ]
+    products = ["Product A", "Product B", "Product C", "Service X", "Service Y", "Bundle Pack"]
 
     data = {
         "transaction_id": range(1, num_rows + 1),
-        "customer_id": [
-            random.randint(1, min(num_customers, num_rows))
-            for _ in range(num_rows)
-        ],
+        "customer_id": [random.randint(1, min(num_customers, num_rows)) for _ in range(num_rows)],
         "amount": [round(random.uniform(10, 5000), 2) for _ in range(num_rows)],
         "date": [
             (datetime(2023, 1, 1) + timedelta(days=random.randint(0, 365))).date()
@@ -136,9 +144,7 @@ def generate_mock_data(
     rows: int = typer.Option(
         50, "--rows", "-r", help="Number of rows to generate for each dataset"
     ),
-    seed: int = typer.Option(
-        42, "--seed", "-s", help="Random seed for reproducible generation"
-    ),
+    seed: int = typer.Option(42, "--seed", "-s", help="Random seed for reproducible generation"),
     no_xlsx: bool = typer.Option(
         False,
         "--no-xlsx",
@@ -210,6 +216,7 @@ def generate_mock_data(
     if not no_xlsx:
         try:
             import openpyxl  # noqa: F401
+
             sales_df.to_excel(sales_path_xlsx, index=False, engine="openpyxl")
             typer.echo(f"✓ Wrote {sales_path_xlsx} ({len(sales_df)} rows)")
         except ImportError:
@@ -236,11 +243,7 @@ def generate_mock_data(
     typer.echo("\nFiles created:")
     typer.echo(f"  - data/raw/crm_data.csv ({len(crm_df)} customers)")
     if not no_xlsx:
-        typer.echo(
-            f"  - data/raw/sales_data.xlsx ({len(sales_df)} transactions)"
-        )
+        typer.echo(f"  - data/raw/sales_data.xlsx ({len(sales_df)} transactions)")
     else:
-        typer.echo(
-            f"  - data/raw/sales_data.csv ({len(sales_df)} transactions)"
-        )
+        typer.echo(f"  - data/raw/sales_data.csv ({len(sales_df)} transactions)")
     typer.echo("\nNext: Run 'python -m etl_cli run-pipeline' to process the data.")

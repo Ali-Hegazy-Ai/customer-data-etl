@@ -11,9 +11,7 @@ Tests environment diagnostics functionality including:
 Tested using pytest with monkeypatch and tmpdir fixtures.
 """
 
-import os
 import sys
-from unittest import mock
 
 import pytest
 
@@ -143,9 +141,9 @@ class TestCheckEnvIntegration:
         monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
         from etl_cli.check_env import (
+            check_environment_variables,
             check_python_version,
             check_required_packages,
-            check_environment_variables,
         )
 
         # Run all checks

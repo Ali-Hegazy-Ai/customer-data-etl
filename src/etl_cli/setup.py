@@ -24,8 +24,7 @@ try:
     import typer
 except ImportError:
     print(
-        "Error: typer is not installed. "
-        "Install with: pip install typer[all]",
+        "Error: typer is not installed. " "Install with: pip install typer[all]",
         file=sys.stderr,
     )
     sys.exit(3)
@@ -65,8 +64,7 @@ def setup(
         typer.echo("✓ Running inside Docker (as recommended)")
     else:
         typer.echo(
-            "⚠️  Running on host system. "
-            "Consider using Docker: docker compose run --rm etl bash"
+            "⚠️  Running on host system. " "Consider using Docker: docker compose run --rm etl bash"
         )
 
     # Create data directories
@@ -100,7 +98,7 @@ def setup(
         try:
             content = env_template.read_text()
             env_file.write_text(content)
-            typer.echo(f"✓ Created .env from template")
+            typer.echo("✓ Created .env from template")
             typer.echo("  ⚠️  Remember to fill in your credentials!")
         except Exception as e:
             typer.echo(f"❌ Error creating .env: {e}", err=True)
