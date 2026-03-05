@@ -1,6 +1,6 @@
 # ETL for Customer Data from Multiple Sources
 
-This is a college Data Engineering group project.
+
 
 ## Project Goal
 Merge customer data from CRM and Excel, clean/transform it, and load clean output that is ready for Data Warehouse analysis.
