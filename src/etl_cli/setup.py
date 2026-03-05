@@ -41,7 +41,6 @@ def setup(
         "-f",
         help="Force re-initialization even if already set up",
     ),
-    ctx: typer.Context = typer.Depends(lambda: None),
 ) -> None:
     """
     Initialize the workspace and environment for the first time.

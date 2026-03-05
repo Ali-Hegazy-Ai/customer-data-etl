@@ -30,7 +30,8 @@ from pathlib import Path
 
 try:
     import typer
-import pandas as pd
+    import pandas as pd
+    import numpy as np
 except ImportError as e:
     print(
         f"Error: Required package not found: {e}",
@@ -56,7 +57,7 @@ def generate_crm_data(num_rows: int, seed: int) -> pd.DataFrame:
     from datetime import datetime, timedelta
 
     random.seed(seed)
-    pd.np.random.seed(seed)
+    np.random.seed(seed)
 
     first_names = [
         "أحمد", "محمد", "علي", "فاطمة", "عائشة",
@@ -107,7 +108,7 @@ def generate_sales_data(num_rows: int, seed: int, num_customers: int) -> pd.Data
     from datetime import datetime, timedelta
 
     random.seed(seed + 1)
-    pd.np.random.seed(seed + 1)
+    np.random.seed(seed + 1)
 
     products = [
         "Product A", "Product B", "Product C", "Service X", "Service Y", "Bundle Pack"
