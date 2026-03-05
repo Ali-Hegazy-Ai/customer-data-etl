@@ -1,132 +1,225 @@
 # Data Validation
 
-This page describes the data quality checks and validation approach used to confirm that the ETL pipeline produces correct, complete output.
+This page describes how to verify that the ETL pipeline produced correct, complete output after each run. Running these checks is mandatory before considering any pipeline run "done".
+
+---
+
+## Why Validation Matters
+
+A pipeline that runs without errors does not automatically mean the output data is correct. The pipeline could:
+- Drop rows silently due to a filter condition that is too strict
+- Corrupt date values due to a wrong format string
+- Produce duplicate rows if the deduplication logic has a bug
+- Accept null values that should have been rejected
+
+Validation queries catch these issues before they reach your analysts and reports.
 
 ---
 
 ## Validation Goals
 
-1. **Completeness** — No expected rows are lost between raw input and clean output.
-2. **Accuracy** — Transformed values are correct (types, formats, business rules).
-3. **Uniqueness** — No duplicate `CustomerID` values in the final output.
-4. **Consistency** — Data from CRM and Excel merges without conflicts.
-5. **Conformity** — All columns match the expected schema (see [SQL Schema](SQL-Schema)).
+| Goal | What It Checks |
+|---|---|
+| **Completeness** | Expected number of rows made it through |
+| **Uniqueness** | No duplicate `CustomerID` values |
+| **Accuracy** | Field values match expected formats and business rules |
+| **Validity** | Dates are real dates, emails contain `@`, segments are in the allowed list |
+| **Consistency** | CRM and Excel records merge without unexplained value conflicts |
 
 ---
 
-## Validation Checklist (Run After Each Pipeline Execution)
+## Validation Checklist
 
-| Check | Query / Method | Expected Result |
-|---|---|---|
-| Row count: raw CRM | Count rows in `data/raw/` CRM file | Matches source record |
-| Row count: raw Excel | Count rows in `data/raw/` Excel file | Matches source record |
-| Row count: clean output | Count rows in `data/clean/` output | ≤ sum of raw rows (dedup removes duplicates) |
-| Row count: SQL table | `SELECT COUNT(*) FROM dbo.Customers` | Matches clean output count |
-| Null CustomerID | See query below | 0 rows |
-| Null CustomerName | See query below | 0 rows |
-| Duplicate CustomerID | See query below | 0 rows |
-| Invalid Email format | See query below | 0 rows (or documented exceptions) |
-| Null SignupDate | See query below | Documented and acceptable |
-| Segment values | See query below | Only `Premium`, `Standard`, `Basic` |
+Run this checklist after every pipeline execution:
+
+- [ ] Row count in `dbo.Customers` is non-zero
+- [ ] Row count is within expected range (not massively lower than source)
+- [ ] No NULL `CustomerID` values
+- [ ] No NULL or blank `CustomerName` values
+- [ ] No duplicate `CustomerID` values
+- [ ] All `Segment` values are `PREMIUM`, `STANDARD`, or `BASIC`
+- [ ] All non-null `SignupDate` values fall within `2000-01-01` to today
+- [ ] All non-null `Email` values contain `@`
+- [ ] Row counts from CRM and Excel sources are both represented in `SourceSystem`
 
 ---
 
 ## Validation SQL Queries
 
-Save these in `sql/scripts/05_validation_queries.sql`.
+Save and run these from `sql/scripts/05_validation_queries.sql`.
 
-### 1. Row Count Check
+### 1. Total Row Count
 
 ```sql
--- Total rows in the Customers table
-SELECT COUNT(*) AS TotalCustomers FROM dbo.Customers;
+-- How many customers are in the table?
+SELECT COUNT(*) AS TotalCustomers
+FROM dbo.Customers;
 ```
 
-### 2. Null Key Fields
+**Expected:** Greater than 0. Compare against known source file row counts.
+
+---
+
+### 2. Null Primary Key
 
 ```sql
--- Customers with null CustomerID or CustomerName (should return 0 rows)
-SELECT *
+-- Rows with null CustomerID (should be 0 rows)
+SELECT COUNT(*) AS NullCustomerID
 FROM dbo.Customers
-WHERE CustomerID IS NULL
-   OR CustomerName IS NULL OR LTRIM(RTRIM(CustomerName)) = '';
+WHERE CustomerID IS NULL;
 ```
 
-### 3. Duplicate CustomerID
+**Expected:** 0
+
+---
+
+### 3. Null or Blank Customer Name
 
 ```sql
--- Duplicate CustomerIDs (should return 0 rows after dedup)
+-- Rows with null or blank CustomerName (should be 0 rows)
+SELECT COUNT(*) AS BlankNames
+FROM dbo.Customers
+WHERE CustomerName IS NULL
+   OR LTRIM(RTRIM(CustomerName)) = '';
+```
+
+**Expected:** 0
+
+---
+
+### 4. Duplicate CustomerID
+
+```sql
+-- CustomerIDs that appear more than once (should be 0 rows)
 SELECT CustomerID, COUNT(*) AS Occurrences
 FROM dbo.Customers
 GROUP BY CustomerID
 HAVING COUNT(*) > 1;
 ```
 
-### 4. Invalid Email Format
+**Expected:** 0 rows returned
+
+---
+
+### 5. Invalid Email Format
 
 ```sql
--- Emails that don't contain '@' (rough format check)
+-- Emails that don't look like email addresses
 SELECT CustomerID, Email
 FROM dbo.Customers
 WHERE Email IS NOT NULL
-  AND Email NOT LIKE '%@%.%';
+  AND (Email NOT LIKE '%@%' OR Email NOT LIKE '%.%');
 ```
 
-### 5. Unexpected Segment Values
+**Expected:** 0 rows (or small number with documented exceptions)
+
+---
+
+### 6. Unexpected Segment Values
 
 ```sql
--- Segment values outside the expected list
-SELECT DISTINCT Segment
+-- Segment values outside the allowed list
+SELECT DISTINCT Segment, COUNT(*) AS Count
 FROM dbo.Customers
-WHERE Segment NOT IN ('Premium', 'Standard', 'Basic');
+GROUP BY Segment
+ORDER BY Count DESC;
 ```
 
-### 6. SignupDate Range Check
+**Expected:** Only `PREMIUM`, `STANDARD`, `BASIC`, or NULL (if allowed)
+
+---
+
+### 7. SignupDate Out of Range
 
 ```sql
--- Dates outside a reasonable range
+-- Dates that are in the future or unrealistically old
 SELECT CustomerID, SignupDate
 FROM dbo.Customers
-WHERE SignupDate < '2000-01-01'
-   OR SignupDate > GETDATE();
+WHERE SignupDate IS NOT NULL
+  AND (SignupDate < '2000-01-01' OR SignupDate > CAST(GETDATE() AS DATE));
 ```
 
-### 7. Source System Distribution
+**Expected:** 0 rows
+
+---
+
+### 8. Source System Distribution
 
 ```sql
--- How many records came from each source
+-- How many records came from each source?
 SELECT SourceSystem, COUNT(*) AS RecordCount
 FROM dbo.Customers
 GROUP BY SourceSystem;
 ```
 
----
-
-## Validation Workflow
-
-1. After each pipeline run, open SSMS and run the queries above in `05_validation_queries.sql`.
-2. Record results in a comment in the next commit message or in the `docs/project_flow.md` progress table.
-3. If any check fails:
-   - Identify the root cause in the source file or ADF transformation step.
-   - Fix the data flow or SQL script.
-   - Re-run the pipeline.
-   - Re-run all validation checks.
+**Expected:** Both `CRM` and `Excel` rows are present. If one is 0, the source file may not have been loaded.
 
 ---
 
-## Row Count Tracking Template
+### 9. Row Count by Country
 
-Update this table in `docs/project_flow.md` after each cycle:
+```sql
+-- Top countries by customer count
+SELECT Country, COUNT(*) AS CustomerCount
+FROM dbo.Customers
+GROUP BY Country
+ORDER BY CustomerCount DESC;
+```
 
-| Date | CRM Raw Rows | Excel Raw Rows | Clean Output Rows | SQL Table Rows | Issues Found |
-|---|---|---|---|---|---|
-| YYYY-MM-DD | — | — | — | — | None |
+**Expected:** Countries are full English names (not ISO codes like `EGY`). No `NULL` country if source data was complete.
 
 ---
 
-## Automated Validation (Future Improvement)
+### 10. Latest Pipeline Run Status
 
-For a more advanced setup, consider:
-- Adding a **Validation Activity** at the end of the ADF pipeline that runs `05_validation_queries.sql` and fails the run if any check returns rows.
-- Using ADF's **Data Flow** debug statistics to capture row counts at each transformation step.
-- Logging rejected rows to a `data/rejected/` folder with an error reason column.
+```sql
+-- What did the most recent pipeline run produce?
+SELECT TOP 1
+    PipelineName,
+    RunStart,
+    RunEnd,
+    DATEDIFF(SECOND, RunStart, RunEnd) AS DurationSeconds,
+    RowsLoaded,
+    RowsRejected,
+    Status,
+    Notes
+FROM dbo.ETLRunLog
+ORDER BY RunStart DESC;
+```
+
+**Expected:** `Status = 'Success'`, `RowsLoaded > 0`, `RowsRejected` is documented.
+
+---
+
+## What To Do When a Check Fails
+
+| Check That Failed | Likely Cause | Investigation Steps |
+|---|---|---|
+| Row count too low | Filter dropped too many rows | Review Filter step in Data Flow; check source file for unexpected nulls |
+| Null CustomerID exists | Source file had blank IDs | Check source file; strengthen the Filter step |
+| Duplicate CustomerID | Deduplication step not working | Review Aggregate step configuration in the Data Flow |
+| Unexpected Segment value | Source file has new tier names | Add the new value to the allowed list or add a mapping |
+| ISO country codes in output | Country mapping table incomplete | Update the country mapping in the Derived Column step |
+| SourceSystem = NULL | `SourceSystem` column not set in Data Flow | Check the Derived Column step for the `SourceSystem` hardcoded value |
+
+---
+
+## Row Count Tracking Table
+
+Update this table in `docs/project_flow.md` after each pipeline run:
+
+| Run Date | CRM Raw Rows | Excel Raw Rows | Clean Output Rows | SQL Table Rows | Rejected Rows | Issues Found |
+|---|---|---|---|---|---|---|
+| YYYY-MM-DD | -- | -- | -- | -- | -- | None |
+
+---
+
+## Rejected Records
+
+Rows that are filtered out by the pipeline (e.g. null `CustomerID`) should be captured in a rejected output location:
+
+- **File path:** `data/rejected/rejected_YYYYMMDD.csv`
+- **Columns:** All source columns + `RejectionReason`
+- This allows the team to review and fix source data issues rather than silently losing records.
+
+To implement this in ADF, add a second Sink in the Data Flow connected to the Filter step's "false" branch.

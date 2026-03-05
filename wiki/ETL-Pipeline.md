@@ -1,118 +1,239 @@
 # ETL Pipeline
 
-This page describes the Azure Data Factory pipeline architecture, data flow steps, and transformation logic used in this project.
+This page explains how the Azure Data Factory pipeline works end-to-end -- from reading raw source files to writing clean data into SQL Server.
+
+---
+
+## What Is a Pipeline?
+
+In Azure Data Factory, a **Pipeline** is a sequence of activities that run in a defined order. Think of it like a recipe: each activity is one cooking step, and the pipeline runs them all in the right order.
+
+Our pipeline is called `pl_customer_etl`.
 
 ---
 
 ## Pipeline Overview
 
-The pipeline ingests customer data from two sources, merges and transforms it, and writes clean output to the `data/clean/` folder and/or a SQL Server target table.
-
 ```
-[CRM Source File]  ──┐
-                      ├──► [ADF Data Flow: Merge + Transform] ──► [data/clean/] ──► [SQL Server Table]
-[Excel Source File] ──┘
+[Source Files in data/raw/]
+        |
+        v
++-------+-------+
+| Activity 1:   |  Copy CRM CSV from raw/ to staging
+| Copy CRM      |
++-------+-------+
+        |
+        v
++-------+-------+
+| Activity 2:   |  Copy Excel file from raw/ to staging
+| Copy Excel    |
++-------+-------+
+        |
+        v
++-------+-------+
+| Activity 3:   |  Merge, clean, deduplicate (see Data Flow section)
+| Data Flow     |
++-------+-------+
+        |
+        +---------------------+
+        v                     v
++-------+-------+   +---------+-------+
+| Activity 4:   |   | Activity 5:     |
+| Write CSV to  |   | Load rows into  |
+| data/clean/   |   | SQL Server      |
++---------------+   +-----------------+
 ```
 
 ---
 
-## ADF Assets
+## ADF Assets Reference
 
-All ADF assets are exported as JSON and stored in the repository:
+All ADF configuration is stored as JSON in the repository. Never edit these JSON files by hand -- always make changes in ADF Studio and then export the updated JSON.
 
-| Folder | Contents |
-|---|---|
-| `adf/pipelines/` | Pipeline definitions (orchestration logic) |
-| `adf/datasets/` | Dataset definitions (source and sink schemas) |
-| `adf/linked_services/` | Connection definitions (storage accounts, SQL Server) |
-
-After making changes in ADF Studio, always export and commit the updated JSON files.
+| Asset Type | Folder | Files |
+|---|---|---|
+| Pipelines | `adf/pipelines/` | `pl_customer_etl.json` |
+| Data Flows | `adf/pipelines/` | `df_merge_transform.json` |
+| Datasets | `adf/datasets/` | `ds_crm_source.json`, `ds_excel_source.json`, `ds_clean_output.json`, `ds_sql_customers.json` |
+| Linked Services | `adf/linked_services/` | `ls_blob_storage.json`, `ls_sql_server.json` |
 
 ---
 
 ## Linked Services
 
-| Name | Type | Purpose |
+A **Linked Service** is a connection definition -- it tells ADF how to connect to an external system.
+
+| Name | Connects To | Used By |
 |---|---|---|
-| `ls_blob_storage` | Azure Blob Storage | Connects to the storage container holding `data/raw/` and `data/clean/` |
-| `ls_sql_server` | SQL Server | Connects to the target SQL Server database |
+| `ls_blob_storage` | Azure Blob Storage | Reading `data/raw/` files and writing `data/clean/` files |
+| `ls_sql_server` | SQL Server database | Loading clean data into `dbo.Customers` |
 
 ---
 
 ## Datasets
 
-| Name | Type | Linked Service | Notes |
+A **Dataset** defines the structure and location of data that ADF reads or writes.
+
+| Dataset Name | Type | Linked Service | Location / Table |
 |---|---|---|---|
-| `ds_crm_source` | DelimitedText (CSV) | `ls_blob_storage` | Points to `data/raw/` CRM file |
-| `ds_excel_source` | Excel | `ls_blob_storage` | Points to `data/raw/` Excel file |
-| `ds_clean_output` | DelimitedText (CSV) | `ls_blob_storage` | Points to `data/clean/` output |
-| `ds_sql_customers` | SQL Server Table | `ls_sql_server` | Target table for cleaned data |
+| `ds_crm_source` | DelimitedText (CSV) | `ls_blob_storage` | `data/raw/crm_customers_*.csv` |
+| `ds_excel_source` | Excel | `ls_blob_storage` | `data/raw/excel_customers_*.xlsx` (sheet: `Customers`) |
+| `ds_clean_output` | DelimitedText (CSV) | `ls_blob_storage` | `data/clean/customers_clean_YYYYMMDD.csv` |
+| `ds_sql_customers` | SQL Server Table | `ls_sql_server` | `dbo.CustomerStaging` |
 
 ---
 
-## Pipeline: `pl_customer_etl`
+## Data Flow: df_merge_transform
 
-### Activities (in order)
+The **Data Flow** is where all the actual data cleaning and merging happens. Data Flows run on a Spark cluster inside ADF -- you design them visually and ADF generates the Spark code.
 
-1. **Copy CRM Data** — Copy activity reads the CRM CSV from `data/raw/` into a staging area.
-2. **Copy Excel Data** — Copy activity reads the Excel file from `data/raw/` into a staging area.
-3. **Data Flow: Transform & Merge** — Data Flow activity merges both sources and applies transformation rules.
-4. **Copy to Clean Output** — Copy activity writes the transformed data to `data/clean/`.
-5. **Load to SQL** — Copy activity loads the clean output into the SQL Server target table.
+### Data Flow Diagram
 
----
+```
++------------------+          +------------------+
+|  Source: CRM     |          |  Source: Excel   |
+|  ds_crm_source   |          |  ds_excel_source |
++--------+---------+          +--------+---------+
+         |                             |
+         v                             v
++--------+---------+          +--------+---------+
+|  Select          |          |  Select          |
+|  Rename columns  |          |  Rename columns  |
+|  to unified      |          |  to unified      |
+|  schema          |          |  schema          |
++--------+---------+          +--------+---------+
+         |                             |
+         v                             v
++--------+---------+          +--------+---------+
+|  Derived Column  |          |  Derived Column  |
+|  Fix data types, |          |  Fix data types, |
+|  formats,        |          |  formats,        |
+|  add SourceSystem|          |  add SourceSystem|
++--------+---------+          +--------+---------+
+         |                             |
+         v                             v
++--------+---------+          +--------+---------+
+|  Filter          |          |  Filter          |
+|  Drop rows with  |          |  Drop rows with  |
+|  null CustomerID |          |  null CustomerID |
+|  or Name         |          |  or Name         |
++--------+---------+          +--------+---------+
+         |                             |
+         +-------------+---------------+
+                       |
+                       v
+             +---------+---------+
+             |  Union            |
+             |  Combine both     |
+             |  streams into one |
+             +---------+---------+
+                       |
+                       v
+             +---------+---------+
+             |  Aggregate        |
+             |  Deduplicate on   |
+             |  CustomerID       |
+             |  Keep most recent |
+             +---------+---------+
+                       |
+              +--------+--------+
+              v                 v
+    +---------+------+  +-------+---------+
+    |  Sink: CSV     |  |  Sink: SQL      |
+    |  data/clean/   |  |  CustomerStaging|
+    +----------------+  +-----------------+
+```
 
-## Data Flow: `df_merge_transform`
+### Transformation Rules
 
-### Transformation Steps
+#### Step 1 -- Select (Column Renaming)
 
-| Step | Transformation | Description |
+Both sources are unified to the same column names:
+
+| CRM Column | Excel Column | Unified Column |
 |---|---|---|
-| 1 | **Source (CRM)** | Read CRM customer rows |
-| 2 | **Source (Excel)** | Read Excel customer rows |
-| 3 | **Select** | Standardize column names across both sources |
-| 4 | **Derived Column** | Standardize data types (dates, phone formats, etc.) |
-| 5 | **Filter** | Remove rows with null CustomerID or CustomerName |
-| 6 | **Aggregate / Exists** | Deduplicate on CustomerID — keep the most recent record |
-| 7 | **Union** | Merge CRM and Excel streams into one |
-| 8 | **Sink (CSV)** | Write to `data/clean/` |
-| 9 | **Sink (SQL)** | Upsert into the SQL Server target table |
+| `customer_id` | `CustomerID` | `CustomerID` |
+| `full_name` | `Name` | `CustomerName` |
+| `email` | `EmailAddress` | `Email` |
+| `phone` | `PhoneNumber` | `Phone` |
+| `signup_date` | `JoinDate` | `SignupDate` |
+| `country` | `Country` | `Country` |
+| `segment` | `CustomerSegment` | `Segment` |
 
----
+#### Step 2 -- Derived Column (Business Rules)
 
-## Column Mapping
+| Column | Rule Applied |
+|---|---|
+| `CustomerID` | Cast to integer |
+| `CustomerName` | `trim(initCap(CustomerName))` -- remove spaces and title-case |
+| `Email` | `lower(trim(Email))` -- lowercase and trim |
+| `Phone` | Regex normalisation to `+XX-XXX-XXXXXXX` format |
+| `SignupDate` | Parse string to Date using `toDate(SignupDate, 'yyyy-MM-dd')` or `'dd/MM/yyyy'` |
+| `Country` | Map ISO codes to full names using lookup table |
+| `Segment` | `upper(Segment)` -- enforce uppercase |
+| `SourceSystem` | Hardcoded as `'CRM'` or `'Excel'` depending on the stream |
 
-| Source Column (CRM / Excel) | Target Column | Type | Transformation Notes |
-|---|---|---|---|
-| `customer_id` / `CustomerID` | `CustomerID` | INT | Cast to integer, reject nulls |
-| `full_name` / `Name` | `CustomerName` | NVARCHAR(200) | Trim whitespace, title case |
-| `email` / `EmailAddress` | `Email` | NVARCHAR(255) | Lowercase, validate format |
-| `phone` / `PhoneNumber` | `Phone` | NVARCHAR(50) | Normalize to `+XX-XXX-XXXXXXX` |
-| `signup_date` / `JoinDate` | `SignupDate` | DATE | Parse to ISO format `YYYY-MM-DD` |
-| `country` / `Country` | `Country` | NVARCHAR(100) | Standardize to ISO 3166-1 name |
-| `segment` / `CustomerSegment` | `Segment` | NVARCHAR(50) | Uppercase |
+#### Step 3 -- Filter (Drop Bad Rows)
+
+Rows are dropped if:
+- `CustomerID` is null or zero
+- `CustomerName` is null or blank after trimming
+
+Dropped rows are logged to `data/rejected/` for review.
+
+#### Step 4 -- Union
+
+The two cleaned streams (CRM and Excel) are appended into a single stream. At this point the combined stream may contain duplicate `CustomerID` values.
+
+#### Step 5 -- Aggregate (Deduplicate)
+
+Group by `CustomerID` and use `last()` / `first()` aggregation to pick one record per customer. The CRM record is preferred -- if both sources have the same `CustomerID`, the CRM values are used for key fields.
 
 ---
 
 ## Running the Pipeline
 
-1. Open [ADF Studio](https://adf.azure.com) and navigate to **Author → Pipelines**.
+### Debug Run (Test with Sample Data)
+
+1. Open ADF Studio and go to **Author > Pipelines**.
 2. Open `pl_customer_etl`.
-3. Click **Debug** to run with current inputs, or **Add Trigger → Trigger Now** for a manual full run.
-4. Monitor progress in **Monitor → Pipeline Runs**.
-5. After successful completion, verify output files in `data/clean/` and row counts in the SQL table.
+3. Click **Debug** in the toolbar.
+4. ADF will sample the first 100 rows from each source and run through the entire pipeline.
+5. Check the activity output at the bottom of the screen.
+
+### Full Run (Production)
+
+1. Click **Add Trigger > Trigger Now** to start a full run immediately.
+2. Go to **Monitor > Pipeline Runs** to watch progress.
+3. Click on the pipeline run to see individual activity results and row counts.
+
+### Scheduled Run
+
+See the [Project Architecture](Project-Architecture) page for instructions on setting up a scheduled or event-based trigger.
 
 ---
 
-## Updating ADF Assets
+## After the Pipeline Runs
 
-After any change in ADF Studio:
-1. Export the affected pipeline/dataset/linked service as JSON.
-2. Replace the corresponding file in `adf/pipelines/`, `adf/datasets/`, or `adf/linked_services/`.
-3. Commit and push the updated file.
+1. Check **Monitor > Pipeline Runs** -- status should be **Succeeded**.
+2. Verify output in `data/clean/` -- a new CSV file should appear.
+3. In SSMS, run: `SELECT COUNT(*) FROM dbo.Customers;` to verify rows were loaded.
+4. Run the validation queries from `sql/scripts/05_validation_queries.sql`.
+5. Update the progress table in `docs/project_flow.md`.
+
+---
+
+## Updating ADF Assets After Making Changes
+
+Whenever you change a pipeline, dataset, or linked service in ADF Studio:
+
+1. Click **Publish All** in ADF Studio to save changes to Azure.
+2. Export the changed item as JSON (right-click > Export).
+3. Replace the corresponding file in `adf/pipelines/`, `adf/datasets/`, or `adf/linked_services/`.
+4. Commit and push the updated JSON to GitHub:
 
 ```bash
 git add adf/
-git commit -m "Update ADF pipeline: <description of change>"
+git commit -m "Update ADF pipeline: describe what you changed"
 git push
 ```
