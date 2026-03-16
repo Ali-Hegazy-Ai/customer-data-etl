@@ -1,229 +1,172 @@
-# ETL Planning Diagrams (Mermaid)
+# ETL Planning Diagrams
 
-High-level system architecture.
-<!-- ALT: high-level architecture -->
+This guide explains how the team works together from raw files to final reporting outputs.
+
+## 1. High-Level Architecture
+
+This diagram shows the full project story, including who performs each major step and how work moves from collection to reporting.
+
 ```mermaid
 flowchart TD
-    CRM["CRM Export"] --> Blob["Blob Storage (raw)\ndata/raw/"]
-    Excel["Excel Files"] --> Blob
-    Blob --> ADF["ADF Orchestration"]
-    ADF --> MDF["Mapping Data Flow"]
-    MDF --> StgDB["Staging DB"]
-    StgDB --> Val["Validation"]
-    Val --> ClnDB["Clean DB"]
-    ClnDB --> PBI["Power BI"]
-    KV["Azure Key Vault"] --- ADF
-    ADF --- LA["Log Analytics"]
+    S1["Amin and Ali collect CRM and Excel files"] --> S2["Amin and Ali place files in raw storage"]
+    S2 --> S3["Ali runs the ETL pipeline in Azure Data Factory"]
+    S3 --> S4["Ali standardizes and merges customer records"]
+    S4 --> S5["Aseel and Habiba review data quality results"]
+    S5 --> S6["Mennatullah and Amin prepare clean data for BI"]
+    S6 --> S7["Team reviews insights in Power BI"]
 
-    subgraph Legend
-        R1["Role 1 - Extraction: Amin,Ali"]
-        R2["Role 2 - ETL: Ali"]
-        R3["Role 3 - Modeling & BI: Mennatullah, Amin"]
-        R4["Role 4 - Quality & Testing: Aseel,Habiba"]
-        R5["Role 5 - Documentation: Ali, Amin, Mennat Allah, Aseel, Habiba"]
-        R1 -.-> CRM & Excel & Blob
-        R2 -.-> ADF & MDF & KV
-        R3 -.-> ClnDB & PBI
-        R4 -.-> StgDB & Val
-        R5 -.-> LA
-    end
+    S3 --- S8["Ali uses secure project secrets during pipeline runs"]
+    S3 --- S9["Monitoring tracks each pipeline run"]
+    S7 --> S10["Ali, Amin, Mennat Allah, Aseel, and Habiba update documentation"]
 ```
-Notes: Edit storage paths.
 
-Role-linked pipeline flow with pipeline ownership.
-<!-- ALT: role-linked pipeline flow -->
+## 2. Role-Linked Pipeline Flow
+
+This diagram shows who starts each pipeline activity and how ownership passes from ingestion to validated output.
+
 ```mermaid
 flowchart LR
-    pl1["pl_ingest_crm\n(Role 1 - Extraction: Amin,Ali)"]
-    pl2["pl_ingest_excel\n(Role 1 - Extraction: Amin,Ali)"]
-    pl3["pl_transform_merge_publish\n(Role 2 - ETL: Ali)"]
-    pl1 --> pl3
-    pl2 --> pl3
-    pl3 --> ctrl["control.pipeline_runs\nStaging DB"]
-
-    subgraph Legend
-        R1["Role 1 - Extraction: Amin,Ali"]
-        R2["Role 2 - ETL: Ali"]
-        R1 -.-> pl1 & pl2
-        R2 -.-> pl3
-    end
+    P1["Amin triggers CRM file intake"] --> P3["Ali runs transform and publish pipeline"]
+    P2["Ali triggers Excel file intake"] --> P3
+    P3 --> P4["Aseel and Habiba check run results"]
+    P4 --> P5["Mennatullah confirms BI-ready output"]
 ```
-Notes: Set pipeline names.
 
-In-depth transformation steps inside Mapping Data Flow.
-<!-- ALT: mapping data flow steps -->
+## 3. Mapping Data Flow Steps
+
+This diagram explains Ali's day-to-day transformation work in simple action steps.
+
 ```mermaid
 flowchart TD
-    node1["normalize_email\n(lowercase, trim)"] --> node2["normalize_phone\n(digits only)"]
-    node2 --> node3["normalize_name\n(unicode normalize)"]
-    node3 --> node4["filter_invalid"]
-    node4 --> node5["survivorship_rule\n(source precedence)"]
-    node5 --> node6["dedupe"]
-    node6 --> node7["generate_surrogate_key"]
-    node7 --> node8["write_staging"]
-
-    subgraph Legend
-        R2["Role 2 - ETL: Ali"]
-        R2 -.-> node1 & node2 & node3 & node4 & node5 & node6 & node7 & node8
-    end
+    M1["Ali standardizes email formatting"] --> M2["Ali cleans phone numbers"]
+    M2 --> M3["Ali aligns customer name format"]
+    M3 --> M4["Ali removes incomplete records"]
+    M4 --> M5["Ali applies source priority rules"]
+    M5 --> M6["Ali merges duplicate customers"]
+    M6 --> M7["Ali assigns stable customer IDs"]
+    M7 --> M8["Ali writes cleaned data for validation"]
 ```
-Notes: Edit normalization rules.
 
-Final clean schema ERD, SCD2 indicated.
-<!-- ALT: final clean schema ERD -->
-```mermaid
-classDiagram
-    class customer_dim {
-        +INT customer_id [PK]
-        +VARCHAR full_name
-        +VARCHAR email [UQ]
-        +VARCHAR phone
-        +DATETIME effective_from
-        +DATETIME effective_to
-        +BIT is_current
-    }
-    class customer_source_map {
-        +INT mapping_id
-        +INT customer_id
-        +VARCHAR source_name
-        +VARCHAR source_id
-    }
-    class customer_audit {
-        +INT audit_id
-        +VARCHAR action
-        +DATETIME ts
-        +VARCHAR details
-    }
-    customer_dim "1" -- "*" customer_source_map : has
-    customer_dim "1" -- "*" customer_audit : logged
+## 4. Pipeline Sequence
 
-    class Legend {
-        Role 3 - Modeling & BI: Mennatullah, Amin
-    }
-```
-Notes: Set data types as needed.
+This sequence shows team collaboration during one pipeline run from file handoff to monitoring updates.
 
-Sequence of activities for one pipeline run with owners.
-<!-- ALT: pipeline sequence diagram -->
 ```mermaid
 sequenceDiagram
-    participant Uploader
-    participant ADF
-    participant MDF as Mapping Data Flow
-    participant StgDB as Staging DB
-    participant Val as Validation SP
-    participant ClnDB as Clean DB
+    participant Amin
+    participant Ali
+    participant Aseel
+    participant Mennatullah
     participant Monitor
 
-    Uploader->>ADF: upload file -> trigger pipeline (Role 1 - Extraction: Amin,Ali)
-    ADF->>ADF: ADF start pl_ingest -> copy to Blob Storage (Role 2 - ETL: Ali)
-    ADF->>MDF: ADF invoke pl_transform
-    MDF->>MDF: Mapping Data Flow runs steps
-    MDF->>StgDB: write staging (Role 2 - ETL: Ali)
-    StgDB->>Val: Validation SP runs (Role 4 - Quality & Testing: Aseel,Habiba)
-    Val->>ClnDB: MERGE into Clean DB -> Publish (Role 3 - Modeling & BI: Mennatullah, Amin)
-    ADF->>Monitor: Monitor logs metrics to Log Analytics (Role 5 - Documentation: Ali, Amin, Mennat Allah, Aseel, Habiba)
-
-    Note over Uploader,Monitor: Legend:<br/>Uploader = Role 1 - Extraction: Amin,Ali<br/>ADF, Mapping Data Flow = Role 2 - ETL: Ali<br/>Staging DB, Validation SP = Role 4 - Quality & Testing: Aseel,Habiba<br/>Clean DB = Role 3 - Modeling & BI: Mennatullah, Amin<br/>Monitor = Role 5 - Documentation: Ali, Amin, Mennat Allah, Aseel, Habiba
+    Amin->>Ali: Share latest CRM and Excel files
+    Ali->>Ali: Run ETL pipeline and transform data
+    Ali->>Aseel: Send cleaned output for quality checks
+    Aseel->>Ali: Approve quality or request fixes
+    Ali->>Mennatullah: Publish clean dataset for reporting
+    Mennatullah->>Monitor: Confirm dashboard refresh
+    Monitor->>Amin: Send pipeline status summary
 ```
-Notes: Edit actor names.
 
-Monitoring and alerting responsibilities and escalation.
-<!-- ALT: monitoring and alerting flow -->
+## 5. Monitoring and Alerting
+
+This diagram shows how alerts are routed to the right people and who responds first for each issue type.
+
 ```mermaid
 flowchart LR
-    ADF["ADF Orchestration"] --> LA["Log Analytics"]
-    LA --> AR["Alert Rules"]
-    AR --> pf["pipeline_failure"]
-    AR --> her["high_error_rate"]
-    AR --> mf["missing_file"]
+    A1["Ali runs scheduled ETL pipeline"] --> A2["Monitor collects logs and run metrics"]
+    A2 --> A3["Alert rules evaluate pipeline health"]
 
-    pf --> r2["Role 2 - ETL: Ali"]
-    pf --> r4["Role 4 - Quality & Testing: Aseel,Habiba"]
-    her --> r4
-    mf --> r1["Role 1 - Extraction: Amin,Ali"]
+    A3 --> A4["Pipeline failure alert"]
+    A3 --> A5["Data quality warning"]
+    A3 --> A6["Missing file reminder"]
 
-    subgraph Legend
-        Crit["Critical: pipeline_failure"]
-        Warn["Warning: high_error_rate"]
-        Info["Info: missing_file"]
-    end
+    A4 --> A7["Ali investigates and reruns failed pipeline"]
+    A4 --> A8["Aseel and Habiba review failed quality checks"]
+    A5 --> A8
+    A6 --> A9["Amin and Ali provide missing source files"]
 ```
-Notes: Set alert recipients.
 
-CI/CD pipeline for ADF and SQL artifacts.
-<!-- ALT: CI/CD and deployment flow -->
+## 6. CI/CD and Deployment Flow
+
+This diagram explains how Ali and Mennatullah coordinate releases from development to production with team validation.
+
 ```mermaid
 flowchart LR
-    dev["dev branch"] --> export["export ARM templates"]
-    export --> cicd["CI/CD pipeline"]
-    cicd --> testenv["test environment"]
-    testenv --> prodenv["prod environment"]
-
-    subgraph Approvals
-        app1["deployment approvals by Role 2"]
-        app2["deployment approvals by Role 3"]
-        testenv -.-> app1
-        testenv -.-> app2
-        app1 & app2 -.-> prodenv
-    end
-
-    subgraph Notes
-        KV["Placeholder replacement with Key Vault references for secrets"]
-    end
-    cicd -.-> KV
-
-    subgraph Legend
-        R5["Role 5 - Documentation: Ali, Amin, Mennat Allah, Aseel, Habiba"]
-        R2["Role 2 - ETL: Ali"]
-        R5 -.->|docs| cicd
-        R2 -.->|deployments| cicd
-    end
+    C1["Ali prepares ETL and pipeline changes in dev branch"] --> C2["Mennatullah reviews reporting impact"]
+    C2 --> C3["Ali deploys changes to test environment"]
+    C3 --> C4["Aseel and Habiba validate quality in test"]
+    C4 --> C5["Ali and Mennatullah approve production release"]
+    C5 --> C6["Ali deploys to production"]
+    C6 --> C7["Ali, Amin, Mennat Allah, Aseel, and Habiba update docs"]
 ```
-Notes: Replace placeholders with Key Vault secrets.
 
-4-week project timeline starting 2026-04-01.
-<!-- ALT: project timeline gantt -->
+## 7. Project Timeline (4 Weeks)
+
+This timeline shows when each team member is most active and how work transitions across the four weeks.
+
 ```mermaid
 gantt
-    dateFormat  YYYY-MM-DD
-    title 4-week project timeline starting 2026-04-01
-    
-    section Week 1
-    MVP pipeline (Role 1, Role 2) - Amin,Ali; Ali :a1, 2026-04-01, 7d
-    
-    section Week 2-3
-    Full load & automation (Role 2, Role 3, Role 4) - Ali; Mennatullah, Amin; Aseel,Habiba :a2, after a1, 14d
-    
-    section Week 4
-    Validation & presentation (Role 4, Role 5) - Aseel,Habiba; Ali, Amin, Mennat Allah, Aseel, Habiba :a3, after a2, 7d
-```
-Notes: Edit start date.
+    title 4-Week Project Timeline
+    dateFormat YYYY-MM-DD
+    axisFormat %b %d
 
-Deliverables checklist with owners.
-<!-- ALT: deliverables checklist -->
+    section Week 1
+    Amin and Ali gather source files :a1, 2026-04-01, 3d
+    Ali builds the first ETL flow :a2, after a1, 4d
+
+    section Week 2-3
+    Ali automates recurring pipeline runs :b1, after a2, 7d
+    Mennatullah and Amin prepare BI-ready output :b2, after b1, 7d
+    Aseel and Habiba complete quality checks :b3, after b1, 7d
+
+    section Week 4
+    Team validates results and prepares presentation :c1, after b2, 7d
+```
+
+Owners by phase:
+- Week 1: Amin and Ali lead source preparation and initial pipeline setup.
+- Week 2-3: Ali leads automation, while Mennatullah, Amin, Aseel, and Habiba validate output quality and reporting readiness.
+- Week 4: The full team finalizes validation, documentation, and presentation.
+
+## 8. Deliverables Checklist
+
+This diagram maps each deliverable to the team members responsible for producing or reviewing it.
+
 ```mermaid
 flowchart TD
-    D1["docs/project_flow.md\n(Ali, Amin, Mennat Allah, Aseel, Habiba)"]
-    D2["docs/architecture.md\n(Ali, Amin, Mennat Allah, Aseel, Habiba)"]
-    D3["adf/pipelines/pl_transform_merge_publish.json\n(Ali)"]
-    D4["sql/scripts/customer_schema.sql\n(Mennatullah, Amin)"]
-    D5["data/raw/sample_crm.csv\n(Amin,Ali)"]
-    D6["data/raw/sample_excel.xlsx\n(Amin,Ali)"]
-    D7["data/clean/customers.csv\n(Amin,Ali)"]
-    D8["presentation/final.pdf\n(Ali, Amin, Mennat Allah, Aseel, Habiba)"]
+    D1["docs/project_flow.md\nAli, Amin, Mennat Allah, Aseel, Habiba"]
+    D2["docs/architecture.md\nAli, Amin, Mennat Allah, Aseel, Habiba"]
+    D3["adf/pipelines/pl_transform_merge_publish.json\nAli"]
+    D4["sql/scripts/customer_schema.sql\nMennatullah, Amin"]
+    D5["data/raw/sample_crm.csv\nAmin, Ali"]
+    D6["data/raw/sample_excel.xlsx\nAmin, Ali"]
+    D7["data/clean/customers.csv\nAli"]
+    D8["presentation/final.pdf\nAli, Amin, Mennat Allah, Aseel, Habiba"]
 
-    subgraph Legend
-        R1["Role 1 - Extraction: Amin,Ali"]
-        R2["Role 2 - ETL: Ali"]
-        R3["Role 3 - Modeling & BI: Mennatullah, Amin"]
-        R4["Role 4 - Quality & Testing: Aseel,Habiba"]
-        R5["Role 5 - Documentation: Ali, Amin, Mennat Allah, Aseel, Habiba"]
-        
-        R1 -.-> D5 & D6 & D7
-        R2 -.-> D3
-        R3 -.-> D4
-        R5 -.-> D1 & D2 & D8
-    end
+    Amin["Amin"] -.-> D1
+    Amin -.-> D2
+    Amin -.-> D4
+    Amin -.-> D5
+    Amin -.-> D6
+    Amin -.-> D8
+
+    Ali["Ali"] -.-> D1
+    Ali -.-> D2
+    Ali -.-> D3
+    Ali -.-> D5
+    Ali -.-> D6
+    Ali -.-> D7
+    Ali -.-> D8
+
+    Mennatullah["Mennatullah"] -.-> D4
+    Mennatullah -.-> D8
+
+    Aseel["Aseel"] -.-> D1
+    Aseel -.-> D2
+    Aseel -.-> D8
+
+    Habiba["Habiba"] -.-> D1
+    Habiba -.-> D2
+    Habiba -.-> D8
 ```
-Notes: Update file names if changed.
